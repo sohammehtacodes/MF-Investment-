@@ -1,0 +1,366 @@
+import React, { useState, useMemo } from "react";
+
+// ---------------------------------------------------------------------------
+// Investor Desk — SIP Allocation Dashboard
+// Indicative, educational tool. Not investment advice. Verify live NAV-based
+// returns on your platform before investing. Past performance ≠ future returns.
+// ---------------------------------------------------------------------------
+
+const FONTS = `
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+`;
+
+const C = {
+  bg: "#0A0C12",
+  bg2: "#0E1219",
+  panel: "#12161F",
+  panelHi: "#161B26",
+  border: "rgba(255,255,255,0.07)",
+  borderHi: "rgba(201,162,39,0.35)",
+  text: "#E8E6E0",
+  muted: "#8A8F9C",
+  faint: "#5A5F6B",
+  gold: "#C9A227",
+  goldSoft: "#D9BC5E",
+  green: "#5FB88E",
+};
+
+// Representative funds per "sleeve". Returns are INDICATIVE trailing figures
+// (approx, early 2026) gathered from public fund pages — always re-check live.
+const SLEEVES = {
+  nifty50: {
+    key: "nifty50", name: "Nifty 50 Index", color: "#C9A227",
+    fund: "e.g. UTI / ICICI Pru Nifty 50 Index — Direct",
+    type: "Large-cap · Passive",
+    r3: "~14%", r5: "~16%", er: "0.10–0.20%", risk: "Moderate", assumed: 11,
+    note: "The bedrock. Cheapest, simplest, mirrors India's 50 biggest companies.",
+  },
+  next50: {
+    key: "next50", name: "Nifty Next 50 Index", color: "#7FB5C9",
+    fund: "e.g. UTI / ICICI Pru Nifty Next 50 Index — Direct",
+    type: "Emerging large-cap · Passive",
+    r3: "~19%", r5: "~18%", er: "0.25–0.40%", risk: "Mod–High", assumed: 12,
+    note: "Companies ranked 51–100 — tomorrow's potential Nifty 50 names. More punch, more swings.",
+  },
+  flexi: {
+    key: "flexi", name: "Flexi Cap (core active)", color: "#9BBF8A",
+    fund: "e.g. Parag Parikh Flexi Cap — Direct",
+    type: "Multi-cap + ~global · Active",
+    r3: "~18%", r5: "~18.5%", er: "~0.63%", risk: "Mod–High", assumed: 12,
+    note: "Large-cap tilt, ~global exposure, lower volatility. A calmer active core.",
+  },
+  flexiAgg: {
+    key: "flexiAgg", name: "Flexi Cap (aggressive)", color: "#C98A6A",
+    fund: "e.g. HDFC Flexi Cap — Direct",
+    type: "India-focused, aggressive · Active",
+    r3: "~21%", r5: "~18.8%", er: "~0.77%", risk: "High", assumed: 12,
+    note: "Shifts hard into mid/small caps in rallies. Higher highs, deeper drops.",
+  },
+  midcap: {
+    key: "midcap", name: "Mid Cap (satellite)", color: "#B98AC9",
+    fund: "e.g. HDFC / Motilal Oswal Mid Cap — Direct",
+    type: "Mid-cap · Active",
+    r3: "~24%", r5: "~27%", er: "0.6–1.0%", risk: "High", assumed: 13,
+    note: "Highest growth potential, highest volatility. Only with a long horizon + steady nerves.",
+  },
+};
+
+const PROFILES = {
+  Conservative: {
+    blurb: "Stability first. Index-heavy, no mid-caps. Smoother ride, lower long-run ceiling.",
+    alloc: { nifty50: 55, flexi: 30, next50: 15 },
+  },
+  Moderate: {
+    blurb: "Balanced default for a new long-horizon investor. Index core + active diversification + a dash of growth.",
+    alloc: { nifty50: 40, flexi: 30, next50: 15, midcap: 15 },
+  },
+  Aggressive: {
+    blurb: "Growth-tilted for a 10yr+ horizon and a strong stomach. Heavier mid-cap & aggressive active.",
+    alloc: { nifty50: 25, next50: 15, flexiAgg: 30, midcap: 30 },
+  },
+};
+
+const inr = (n) =>
+  "₹" + Math.round(n).toLocaleString("en-IN");
+
+const compact = (n) => {
+  if (n >= 1e7) return "₹" + (n / 1e7).toFixed(2) + " Cr";
+  if (n >= 1e5) return "₹" + (n / 1e5).toFixed(2) + " L";
+  return inr(n);
+};
+
+const sipFV = (P, annualPct, years) => {
+  const i = annualPct / 100 / 12;
+  const n = years * 12;
+  if (i === 0) return P * n;
+  return P * ((Math.pow(1 + i, n) - 1) / i) * (1 + i);
+};
+
+export default function App() {
+  const [sip, setSip] = useState(40000);
+  const [profile, setProfile] = useState("Moderate");
+
+  const alloc = PROFILES[profile].alloc;
+  const rows = Object.keys(alloc).map((k) => ({ ...SLEEVES[k], pct: alloc[k] }));
+
+  const blendedReturn = useMemo(
+    () => rows.reduce((s, r) => s + (r.pct / 100) * r.assumed, 0),
+    [rows]
+  );
+
+  const horizons = [5, 10, 15, 20];
+
+  return (
+    <div style={{ background: C.bg, minHeight: "100vh", padding: "0", color: C.text,
+      fontFamily: "'Hanken Grotesk', sans-serif" }}>
+      <style>{FONTS}{`
+        * { box-sizing: border-box; }
+        @keyframes rise { from { opacity:0; transform: translateY(12px);} to {opacity:1; transform:none;} }
+        @keyframes grow { from { transform: scaleX(0);} to { transform: scaleX(1);} }
+        .rise { animation: rise .6s cubic-bezier(.2,.7,.2,1) both; }
+        .num { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+        .bar { transform-origin: left; animation: grow .8s cubic-bezier(.2,.7,.2,1) both; }
+        input[type=range]{ accent-color:${C.gold}; }
+        .btn { transition: all .2s ease; cursor:pointer; }
+        .btn:hover { border-color:${C.borderHi}; }
+        .tbl tr:hover td { background: ${C.panelHi}; }
+      `}</style>
+
+      <div style={{ maxWidth: 980, margin: "0 auto", padding: "40px 22px 64px" }}>
+        {/* Header */}
+        <div className="rise" style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 22, marginBottom: 28 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <div style={{ width: 9, height: 9, borderRadius: 2, background: C.gold, transform: "rotate(45deg)" }} />
+            <span className="num" style={{ color: C.gold, fontSize: 12, letterSpacing: 3, textTransform: "uppercase" }}>
+              Investor Desk
+            </span>
+          </div>
+          <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 40, margin: "4px 0 6px", lineHeight: 1.05 }}>
+            SIP Allocation Dashboard
+          </h1>
+          <p style={{ color: C.muted, margin: 0, fontSize: 15, maxWidth: 620 }}>
+            A starting framework for a new investor. Set your monthly amount, pick a risk profile,
+            and see a sensible split across index + active funds — not a fixed prescription.
+          </p>
+        </div>
+
+        {/* Controls */}
+        <div className="rise" style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 16, marginBottom: 26, animationDelay: ".05s" }}>
+          {/* SIP amount */}
+          <div style={panel()}>
+            <label style={lbl()}>Monthly SIP</label>
+            <div className="num" style={{ fontSize: 30, fontWeight: 700, color: C.text, marginTop: 4 }}>
+              {inr(sip)}
+            </div>
+            <input type="range" min={5000} max={100000} step={1000} value={sip}
+              onChange={(e) => setSip(+e.target.value)} style={{ width: "100%", marginTop: 14 }} />
+            <div className="num" style={{ display: "flex", justifyContent: "space-between", color: C.faint, fontSize: 11, marginTop: 4 }}>
+              <span>₹5k</span><span>₹1L</span>
+            </div>
+          </div>
+          {/* Profile */}
+          <div style={panel()}>
+            <label style={lbl()}>Risk Profile</label>
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              {Object.keys(PROFILES).map((p) => (
+                <button key={p} className="btn" onClick={() => setProfile(p)}
+                  style={{
+                    flex: 1, padding: "10px 6px", borderRadius: 9, fontSize: 13.5, fontWeight: 600,
+                    fontFamily: "inherit",
+                    background: profile === p ? C.gold : "transparent",
+                    color: profile === p ? "#0A0C12" : C.muted,
+                    border: `1px solid ${profile === p ? C.gold : C.border}`,
+                  }}>
+                  {p}
+                </button>
+              ))}
+            </div>
+            <p style={{ color: C.muted, fontSize: 13, lineHeight: 1.5, margin: "12px 0 0" }}>
+              {PROFILES[profile].blurb}
+            </p>
+          </div>
+        </div>
+
+        {/* Allocation */}
+        <SectionTitle n="01" t="Suggested Allocation" />
+        <div className="rise" style={{ ...panel(), marginBottom: 14, animationDelay: ".1s" }}>
+          {/* stacked bar */}
+          <div style={{ display: "flex", height: 14, borderRadius: 7, overflow: "hidden", marginBottom: 22 }}>
+            {rows.map((r) => (
+              <div key={r.key} className="bar" title={`${r.name} ${r.pct}%`}
+                style={{ width: `${r.pct}%`, background: r.color }} />
+            ))}
+          </div>
+          {rows.map((r) => (
+            <div key={r.key} style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 0",
+              borderTop: `1px solid ${C.border}` }}>
+              <div style={{ width: 10, height: 10, borderRadius: 3, background: r.color, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>{r.name}</div>
+                <div style={{ color: C.muted, fontSize: 12.5 }}>{r.fund}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div className="num" style={{ fontWeight: 700, fontSize: 16 }}>{inr((sip * r.pct) / 100)}</div>
+                <div className="num" style={{ color: r.color, fontSize: 12.5 }}>{r.pct}% / mo</div>
+              </div>
+            </div>
+          ))}
+          <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 14, marginTop: 4,
+            borderTop: `1px solid ${C.border}` }}>
+            <span style={{ color: C.muted, fontSize: 13 }}>Total deployed monthly</span>
+            <span className="num" style={{ fontWeight: 700, color: C.gold }}>{inr(sip)}</span>
+          </div>
+        </div>
+
+        {/* Comparison table */}
+        <SectionTitle n="02" t="Fund Comparison" />
+        <div className="rise" style={{ ...panel(), padding: 0, overflow: "hidden", marginBottom: 6, animationDelay: ".15s" }}>
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl" style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ color: C.faint, textAlign: "left" }}>
+                  {["Sleeve", "Type", "3Y*", "5Y*", "Expense", "Risk"].map((h, i) => (
+                    <th key={h} style={{ padding: "12px 14px", fontWeight: 600, fontSize: 11,
+                      letterSpacing: 1, textTransform: "uppercase", borderBottom: `1px solid ${C.border}`,
+                      textAlign: i >= 2 && i <= 4 ? "right" : "left" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Object.values(SLEEVES).map((r) => {
+                  const active = !!alloc[r.key];
+                  return (
+                    <tr key={r.key} style={{ opacity: active ? 1 : 0.5 }}>
+                      <td style={td()}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: 2, background: r.color }} />
+                          <div>
+                            <div style={{ fontWeight: 600 }}>{r.name}</div>
+                            <div style={{ color: C.faint, fontSize: 11.5 }}>{r.fund.replace("e.g. ", "")}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ ...td(), color: C.muted }}>{r.type}</td>
+                      <td className="num" style={{ ...td(), textAlign: "right", color: C.green }}>{r.r3}</td>
+                      <td className="num" style={{ ...td(), textAlign: "right", color: C.green }}>{r.r5}</td>
+                      <td className="num" style={{ ...td(), textAlign: "right", color: C.muted }}>{r.er}</td>
+                      <td style={{ ...td(), textAlign: "right" }}><RiskPill risk={r.risk} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <p style={{ color: C.faint, fontSize: 11.5, margin: "0 0 26px" }}>
+          * Indicative trailing returns (approx, early 2026), Direct plans. Dimmed rows aren't in your current profile.
+          These reflect a strong bull run — <b style={{ color: C.muted }}>verify live NAV returns before investing.</b>
+        </p>
+
+        {/* Projection */}
+        <SectionTitle n="03" t="Illustrative Projection" />
+        <div className="rise" style={{ ...panel(), marginBottom: 8, animationDelay: ".2s" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
+            <span style={{ color: C.muted, fontSize: 13.5 }}>
+              {inr(sip)}/mo at a <b style={{ color: C.text }}>conservative {blendedReturn.toFixed(1)}%</b> blended assumption
+            </span>
+            <span style={{ color: C.faint, fontSize: 12 }}>(not the trailing numbers above)</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+            {horizons.map((y) => {
+              const fv = sipFV(sip, blendedReturn, y);
+              const invested = sip * 12 * y;
+              return (
+                <div key={y} style={{ background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 11, padding: "14px 12px" }}>
+                  <div className="num" style={{ color: C.gold, fontSize: 12, fontWeight: 700 }}>{y} YEARS</div>
+                  <div className="num" style={{ fontSize: 21, fontWeight: 700, margin: "6px 0 2px" }}>{compact(fv)}</div>
+                  <div className="num" style={{ color: C.faint, fontSize: 11.5 }}>invested {compact(invested)}</div>
+                  <div className="num" style={{ color: C.green, fontSize: 11.5, marginTop: 2 }}>
+                    +{compact(fv - invested)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <p style={{ color: C.faint, fontSize: 11.5, margin: "0 0 26px" }}>
+          Compounded monthly. Real returns will swing year to year and can be negative for long stretches —
+          this is a smooth-line illustration, not a forecast.
+        </p>
+
+        {/* Tips */}
+        <SectionTitle n="04" t="Worth Knowing" />
+        <div className="rise" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, animationDelay: ".25s" }}>
+          <Tip title="Always pick Direct plans">
+            Direct plans skip distributor commission — expense can be ~0.5–1% lower, which compounds into lakhs over decades. Same fund, more of your money.
+          </Tip>
+          <Tip title="Tax: equity is gentle">
+            Hold &gt;12 months → long-term. First ₹1.25L gain/year is tax-free; beyond that, a flat 12.5%. Selling within a year is taxed at 20%.
+          </Tip>
+          <Tip title="ELSS only if old regime">
+            Want a Sec 80C deduction (up to ₹1.5L)? Swap part of the flexi sleeve into an ELSS fund (e.g. Quant / Mirae / HDFC ELSS) — but the deduction only applies under the old tax regime, and it locks each SIP for 3 years.
+          </Tip>
+          <Tip title="Start, then leave it alone">
+            Automate the SIP, ignore the noise, and review once a year. Time in the market beats timing it. Step the SIP up ~10% a year as income grows.
+          </Tip>
+        </div>
+
+        {/* Disclaimer */}
+        <div style={{ marginTop: 30, padding: "16px 18px", background: C.bg2, border: `1px solid ${C.border}`,
+          borderRadius: 12, color: C.faint, fontSize: 12.2, lineHeight: 1.6 }}>
+          <b style={{ color: C.muted }}>Not investment advice.</b> I'm not a financial advisor, and this is an
+          educational framework, not a personalised recommendation. Fund names are representative examples of
+          well-regarded options in each category — not endorsements. Mutual funds carry market risk; past performance
+          doesn't predict future returns. The right mix depends on your goals, horizon, and risk tolerance — consider
+          confirming with a SEBI-registered investment advisor before committing real money.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function panel() {
+  return { background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18 };
+}
+function lbl() {
+  return { color: C.muted, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", fontWeight: 600,
+    fontFamily: "'JetBrains Mono', monospace" };
+}
+function td() {
+  return { padding: "12px 14px", borderBottom: `1px solid ${C.border}`, verticalAlign: "middle" };
+}
+
+function SectionTitle({ n, t }) {
+  return (
+    <div className="rise" style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0 12px" }}>
+      <span className="num" style={{ color: C.gold, fontSize: 12, fontWeight: 700 }}>{n}</span>
+      <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 19 }}>{t}</span>
+      <span style={{ flex: 1, height: 1, background: C.border }} />
+    </div>
+  );
+}
+
+function RiskPill({ risk }) {
+  const map = {
+    "Moderate": C.green, "Mod–High": C.goldSoft, "High": C.flexiAgg || "#C98A6A",
+  };
+  const col = risk === "High" ? "#C98A6A" : map[risk] || C.muted;
+  return (
+    <span className="num" style={{ fontSize: 11, fontWeight: 600, color: col,
+      border: `1px solid ${col}55`, borderRadius: 20, padding: "3px 9px", whiteSpace: "nowrap" }}>
+      {risk}
+    </span>
+  );
+}
+
+function Tip({ title, children }) {
+  return (
+    <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 13, padding: "15px 16px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+        <span style={{ width: 5, height: 16, borderRadius: 2, background: C.gold }} />
+        <span style={{ fontWeight: 700, fontSize: 14.5 }}>{title}</span>
+      </div>
+      <p style={{ color: C.muted, fontSize: 13, lineHeight: 1.55, margin: 0 }}>{children}</p>
+    </div>
+  );
+}
